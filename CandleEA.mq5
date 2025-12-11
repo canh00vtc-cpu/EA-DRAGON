@@ -1488,7 +1488,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
       
       if(HistoryOrderSelect(deletedTicket))
       {
-         ENUM_ORDER_STATE orderState = (ENUM_ORDER_STATE)HistoryOrderGetInteger(ORDER_STATE);
+         ENUM_ORDER_STATE orderState = (ENUM_ORDER_STATE)HistoryOrderGetInteger(deletedTicket, ORDER_STATE);
          if(orderState == ORDER_STATE_FILLED || orderState == ORDER_STATE_PARTIAL)
             wasFilled = true;
       }
