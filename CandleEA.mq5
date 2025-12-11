@@ -1484,16 +1484,9 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
    if(trans.type == TRADE_TRANSACTION_ORDER_DELETE)
    {
       ulong deletedTicket = trans.order;
-      bool wasFilled = false;
       
-      if(HistoryOrderSelect(deletedTicket))
-      {
-         ENUM_ORDER_STATE orderState = (ENUM_ORDER_STATE)HistoryOrderGetInteger(ORDER_STATE);
-         if(orderState == ORDER_STATE_FILLED || orderState == ORDER_STATE_PARTIAL)
-            wasFilled = true;
-      }
-      
-      if(wasFilled)
+      ENUM_ORDER_STATE state = trans.order_state;
+      if(state == ORDER_STATE_FILLED || state == ORDER_STATE_PARTIAL)
          return;  // pending vừa khớp thành position hợp lệ
       
       int hedgeIndex = FindHedgeByPendingTicket(deletedTicket);
