@@ -1483,11 +1483,8 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
    // =========================================================================
    if(trans.type == TRADE_TRANSACTION_ORDER_DELETE)
    {
-      if(trans.reason == TRADE_TRANSACTION_REASON_ORDER_FILLED ||
-         trans.reason == TRADE_TRANSACTION_REASON_ORDER_TRIGGERED)
-      {
-         return;
-      }
+      if(trans.deal > 0)
+         return;  // pending vừa khớp thành deal => không recover
       
       ulong deletedTicket = trans.order;
       int hedgeIndex = FindHedgeByPendingTicket(deletedTicket);
