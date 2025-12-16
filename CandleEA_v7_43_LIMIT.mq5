@@ -54,6 +54,7 @@ input double InpHedgeDistancePips   = 200;
 input double InpHedgeLotSize        = 0.03;
 input double InpHedgeTakeProfitPips = 150;
 input double InpHedgeStopLossPips   = 70;
+input bool   InpRemoveHedgeSLOnMainFill = true; // NEW: MAIN khớp -> xóa SL của HEDGE?
 
 input group "=== AUTO RECOVER ==="
 input bool   InpAutoRecoverHedge    = true;
@@ -1081,6 +1082,120 @@ bool RemovePositionTPSL(ulong positionTicket)
    return true;
 }
 
+//+------------------------------------------------------------------+
+//| ✅ NEW: XÓA SL CHO HEDGE (PENDING + POSITION)                    |
+//+------------------------------------------------------------------+
+bool RemovePendingOrderSL(ulong orderTicket)
+{
+   if(orderTicket == 0) return false;
+   if(!OrderSelect(orderTicket)) return false;
+
+   if(OrderGetString(ORDER_SYMBOL) != _Symbol) return false;
+   if(OrderGetInteger(ORDER_MAGIC) != MAGIC_HEDGE) return false;
+
+   ENUM_ORDER_TYPE type = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+   if(type != ORDER_TYPE_BUY_LIMIT && type != ORDER_TYPE_SELL_LIMIT) return false;
+
+   double currentSL = OrderGetDouble(ORDER_SL);
+   double currentTP = OrderGetDouble(ORDER_TP);
+   if(currentSL == 0.0) return true;
+
+   MqlTradeRequest req;
+   MqlTradeResult  res;
+   ZeroMemory(req);
+   ZeroMemory(res);
+
+   req.action = TRADE_ACTION_SLTP;
+   req.symbol = _Symbol;
+   req.order  = orderTicket;
+   req.sl     = 0.0;
+   req.tp     = currentTP;
+
+   if(!OrderSend(req, res) || res.retcode != TRADE_RETCODE_DONE)
+      return false;
+
+   int idx = FindHedgeByPendingTicket(orderTicket);
+   if(idx >= 0)
+      hedgeList[idx].sl = 0.0;
+
+   PrintFormat("✅ XOA SL HEDGE PENDING ticket %I64u (TP %.5f)", orderTicket, currentTP);
+   return true;
+}
+
+bool RemoveHedgePositionSL(ulong positionTicket)
+{
+   if(positionTicket == 0) return false;
+   if(!PositionSelectByTicket(positionTicket)) return false;
+
+   if(PositionGetString(POSITION_SYMBOL) != _Symbol) return false;
+   if(PositionGetInteger(POSITION_MAGIC) != MAGIC_HEDGE) return false;
+
+   double currentSL = PositionGetDouble(POSITION_SL);
+   double currentTP = PositionGetDouble(POSITION_TP);
+   if(currentSL == 0.0) return true;
+
+   if(!UpdatePositionTPSL(positionTicket, 0.0, currentTP))
+      return false;
+
+   int idx = FindHedgeByPositionTicket(positionTicket);
+   if(idx >= 0)
+      hedgeList[idx].sl = 0.0;
+
+   PrintFormat("✅ XOA SL HEDGE POSITION ticket %I64u (TP %.5f)", positionTicket, currentTP);
+   return true;
+}
+
+void RemoveAllHedgeSL(string reason)
+{
+   Print("========================================================");
+   PrintFormat("🛡️ XOA SL TAT CA HEDGE - Ly do: %s", reason);
+
+   int pendingRemoved = 0;
+   int positionRemoved = 0;
+
+   // Pending hedge orders
+   int ot = OrdersTotal();
+   for(int i = ot - 1; i >= 0; i--)
+   {
+      ulong ticket = OrderGetTicket(i);
+      if(ticket == 0) continue;
+      if(!OrderSelect(ticket)) continue;
+
+      if(OrderGetString(ORDER_SYMBOL) != _Symbol) continue;
+      if(OrderGetInteger(ORDER_MAGIC) != MAGIC_HEDGE) continue;
+
+      ENUM_ORDER_TYPE type = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+      if(type != ORDER_TYPE_BUY_LIMIT && type != ORDER_TYPE_SELL_LIMIT) continue;
+
+      double sl = OrderGetDouble(ORDER_SL);
+      if(sl == 0.0) continue;
+
+      if(RemovePendingOrderSL(ticket))
+         pendingRemoved++;
+   }
+
+   // Hedge positions
+   int pt = PositionsTotal();
+   for(int i = pt - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0) continue;
+      if(!PositionSelectByTicket(ticket)) continue;
+
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != MAGIC_HEDGE) continue;
+
+      double sl = PositionGetDouble(POSITION_SL);
+      if(sl == 0.0) continue;
+
+      if(RemoveHedgePositionSL(ticket))
+         positionRemoved++;
+   }
+
+   PrintFormat("✅ Da xoa SL: %d pending | %d positions", pendingRemoved, positionRemoved);
+   Print("========================================================");
+}
+
 void RemoveAllMainPositionTP()
 {
    Print("========================================================");
@@ -1983,6 +2098,11 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
             isOpeningHedge = false;
          }
       }
+
+      // ✅ NEW: MAIN khớp -> xóa SL của toàn bộ HEDGE (pending + position)
+      if(InpRemoveHedgeSLOnMainFill)
+         RemoveAllHedgeSL("MAIN khop");
+
       Print("***********************************************************");
       Print("");
    }
